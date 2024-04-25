@@ -308,7 +308,6 @@ class VSRGANModel(VSRModel):
                                                                                                        gt_data.cuda())
             self.log_dict['ee_content_loss'] = ee_content_loss.item()
             loss_G += ee_content_loss
-            print(ee_content_loss.item())
 
         # feature matching (fm) loss
         if self.fm_crit is not None:

@@ -83,17 +83,17 @@ def setup_random_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def setup_logger(name):
+def setup_logger(name,opt,log_file):
     # create a logger
     base_logger = logging.getLogger(name=name)
     base_logger.setLevel(logging.INFO)
     # create a logging format
     formatter = logging.Formatter(fmt='%(asctime)s [%(levelname)s]: %(message)s')
-    # create a stream handler & set format
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
+    # create a file handler & set format
+    fh = logging.FileHandler(f"{opt['train']['log_dir']}/{log_file}")
+    fh.setFormatter(formatter)
     # add handlers
-    base_logger.addHandler(sh)
+    base_logger.addHandler(fh)
 
 
 @master_only
@@ -143,9 +143,16 @@ def setup_paths(opt, mode):
     def setup_ckpt_dir():
         ckpt_dir = opt['train'].get('ckpt_dir', '')
         if not ckpt_dir:  # default dir
-            ckpt_dir = osp.join(opt['exp_dir'], 'train', 'ckpt')
+            ckpt_dir = osp.join(opt['exp_dir'], str(mode), 'ckpt')
             opt['train']['ckpt_dir'] = ckpt_dir
         os.makedirs(ckpt_dir, exist_ok=True)
+
+    def setup_log_dir(opt,mode):
+        log_dir = osp.join(opt['exp_dir'], str(mode), "logs")
+        opt['train']['log_dir'] = log_dir
+        os.makedirs(log_dir, exist_ok=True)
+
+
 
     def setup_res_dir():
         res_dir = opt['test'].get('res_dir', '')
@@ -183,8 +190,9 @@ def setup_paths(opt, mode):
             opt['model']['generator']['load_path_lst'] = [
                 osp.join(ckpt_dir, f'{model_idx}.pth')]
 
-    if mode == 'train':
+    if mode == 'train' or mode == "edge_enhance_train":
         setup_ckpt_dir()
+        setup_log_dir(opt,"train")
 
         # for validation purpose
         for dataset_idx in opt['dataset'].keys():
@@ -197,8 +205,9 @@ def setup_paths(opt, mode):
             if opt['test'].get('save_json', False):
                 setup_json_path()
 
-    elif mode == 'test':
+    elif mode == 'test' or mode == "edge_enhance_test":
         setup_model_path()
+        setup_log_dir(opt,"test")
 
         for dataset_idx in opt['dataset'].keys():
             if 'test' not in dataset_idx:

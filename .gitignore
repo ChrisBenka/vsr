@@ -9,3 +9,4 @@ results/
 data/ToS3/
 data/UDM10/
 *.pyc
+*.log

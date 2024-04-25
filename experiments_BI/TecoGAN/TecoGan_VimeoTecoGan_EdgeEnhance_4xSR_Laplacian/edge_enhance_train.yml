@@ -50,7 +50,7 @@ model:
 
 # training configs
 train:
-  ckpt_dir: /root/vsr/experiments_BI/TecoGAN/TecoGAN_VimeoTecoGAN_4xSR_2GPU/train/
+  ckpt_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/
   tempo_extent: 4
 
   start_iter: 0
@@ -60,7 +60,9 @@ train:
   generator:
     lr: !!float 5e-5
     lr_schedule:
-      type: FixedLR
+      type: StepLR
+      gamma: .9
+      step_size: 10000
     betas: [0.9, 0.999]
 
   # configs for discriminator
@@ -107,15 +109,16 @@ train:
 
 # validation configs
 test:
-  test_freq: 10000
+  # each UDM10  video has 32 frames, so we test at end of
+  test_freq: 160
 
   # whether to save the generated SR results
-  save_res: false
-  res_dir: ~   # use default dir
+  save_res: true
+  res_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/ # use default dir
 
   # whether to save the test results in a json file
   save_json: true
-  json_dir: ~  # use default dir
+  json_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/  # use default dir
 
   padding_mode: reflect
   num_pad_front: 5
@@ -139,9 +142,9 @@ metric:
 
 # logger config
 logger:
-  log_freq: 10
+  log_freq: 40
   decay: 0.99
-  ckpt_freq: 20000
+  ckpt_freq: 320
 
 edge:
   enhance: true

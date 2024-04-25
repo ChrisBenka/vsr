@@ -4,7 +4,7 @@ import math
 import time
 import glob
 import torch
-
+from datetime import datetime
 from data import create_dataloader
 from models import define_model
 from metrics import create_metric_calculator
@@ -143,6 +143,7 @@ def edge_enhance_train(opt):
     subfolder_lr_train = sorted(glob.glob(osp.join(lr_train_folder, '*')))
     subfolder_gt_train = sorted(glob.glob(osp.join(gt_train_folder, '*')))
 
+
     total_iter = opt['train']['total_iter']
     start_iter = 0
     test_freq = opt['test']['test_freq']
@@ -156,15 +157,21 @@ def edge_enhance_train(opt):
     # batch size
     bz = 1
     t_each_side = 2
+    curr_iter = 0
+    epoch = 0
 
-    for epoch in range(100):
+    while curr_iter <= total_iter:
+        epoch += 1
         for (subfolder, subfolder_gt) in zip(subfolder_lr_train, subfolder_gt_train):
             imgs_lq = read_img_seq(subfolder, return_imgname=False)
             imgs_gt = read_img_seq(subfolder_gt, return_imgname=False)
 
             for i in range(t_each_side, imgs_lq.shape[0], 1):
                 # update iter
-                curr_iter = start_iter + 1
+                curr_iter += 1
+
+                if curr_iter > total_iter:
+                    return
 
                 input = imgs_lq[i-t_each_side:i+t_each_side, :, :, :].unsqueeze(0).permute(0,1,3,4,2).cuda()
                 target = imgs_gt[i-t_each_side:i+t_each_side, :, :, :].unsqueeze(0).permute(0,1,3,4,2).cuda()
@@ -189,6 +196,69 @@ def edge_enhance_train(opt):
                 # save model
                 if ckpt_freq > 0 and curr_iter % ckpt_freq == 0:
                     model.save(curr_iter)
+
+                # run validation
+                # evaluate model on Vid4.....
+                if test_freq > 0 and curr_iter % test_freq == 0:
+                    # set model index
+                    model_idx = f'G_iter{curr_iter}'
+                    # for each testset
+                    for dataset_idx in sorted(opt['dataset'].keys()):
+                        # select test dataset
+                        if 'test' not in dataset_idx: continue
+
+                        ds_name = opt['dataset'][dataset_idx]['name']
+                        base_utils.log_info(f'Testing on {ds_name} dataset')
+
+                        # create data loader
+                        test_loader = create_dataloader(
+                            opt, phase='test', idx=dataset_idx)
+                        test_dataset = test_loader.dataset
+                        num_seq = len(test_dataset)
+
+                        # create metric calculator
+                        metric_calculator = create_metric_calculator(opt)
+
+                        # infer a sequence
+                        rank, world_size = dist_utils.get_dist_info()
+                        for idx in range(rank, num_seq, world_size):
+                            # fetch data
+                            data = test_dataset[idx]
+
+                            # prepare data
+                            model.prepare_inference_data(data)
+
+                            # infer
+                            hr_seq = model.infer()
+
+                            # save hr results
+                            if opt['test']['save_res']:
+                                res_dir = osp.join(
+                                    opt['test']['res_dir'], ds_name, model_idx)
+                                res_seq_dir = osp.join(res_dir, data['seq_idx'])
+                                data_utils.save_sequence(
+                                    res_seq_dir, hr_seq, data['frm_idx'], to_bgr=True)
+
+                            # compute metrics for the current sequence
+                            if metric_calculator is not None:
+                                gt_seq = data['gt'].numpy()
+                                metric_calculator.compute_sequence_metrics(
+                                    data['seq_idx'], gt_seq, hr_seq)
+
+                        # save/print results
+                        if metric_calculator is not None:
+                            seq_idx_lst = [data['seq_idx'] for data in test_dataset]
+                            metric_calculator.gather(seq_idx_lst)
+
+                            if opt['test'].get('save_json'):
+                                # write results to a json file
+                                json_path = osp.join(
+                                    opt['test']['json_dir'], f'{ds_name}_avg.json')
+                                metric_calculator.save(model_idx, json_path, override=True)
+                            else:
+                                # print directly
+                                metric_calculator.display()
+
 
 
 def test(opt):
@@ -261,7 +331,7 @@ def test(opt):
                     # write results to a json file
                     json_path = osp.join(
                         opt['test']['json_dir'], f'{ds_name}_avg.json')
-                    metric_calculator.save(model_idx, json_path, override=True)
+                    metric_calculator.save(0, json_path, override=True)
                 else:
                     # print directly
                     metric_calculator.display()
@@ -331,12 +401,12 @@ if __name__ == '__main__':
     args = base_utils.parse_agrs()
 
     # === generic settings === #
+
     # parse configs, set device, set ramdom seed
     opt = base_utils.parse_configs(args)
-    # set logger
-    base_utils.setup_logger('base')
     # set paths
     base_utils.setup_paths(opt, args.mode)
+    base_utils.setup_logger('base',opt,"train.log")
 
     # === train === #
     if args.mode == 'train':

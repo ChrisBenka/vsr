@@ -43,6 +43,13 @@ def define_lr_schedule(schedule_opt, optimizer):
     if schedule_opt['type'] == 'FixedLR':
         schedule = None
 
+    elif schedule_opt['type'] == "StepLR":
+        schedule = optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size = schedule_opt['step_size'],
+            gamma=schedule_opt['gamma']
+        )
+
     elif schedule_opt['type'] == 'MultiStepLR':
         schedule = optim.lr_scheduler.MultiStepLR(
             optimizer,
