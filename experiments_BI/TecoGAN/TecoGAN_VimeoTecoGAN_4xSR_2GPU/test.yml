@@ -11,17 +11,17 @@ dataset:
 
   test1:
     name: Vid4
-    gt_seq_dir: data/Vid4/GT
-    lr_seq_dir: data/Vid4/Bicubic4xLR
+    gt_seq_dir: /root/vsr/data/Vid4/GT
+    lr_seq_dir: /root/vsr/data/Vid4/BIx4
     num_worker_per_gpu: 3
     pin_memory: true
 
-  test2:
-    name: ToS3
-    gt_seq_dir: data/ToS3/GT
-    lr_seq_dir: data/ToS3/Bicubic4xLR
-    num_worker_per_gpu: 3
-    pin_memory: true
+#  test2:
+#    name: ToS3
+#    gt_seq_dir: data/ToS3/GT
+#    lr_seq_dir: data/ToS3/Bicubic4xLRsave_json
+#    num_worker_per_gpu: 3
+#    pin_memory: true
 
 
 # model configs
@@ -34,15 +34,29 @@ model:
     out_nc: 3
     nf: 64
     nb: 10
-    load_path: pretrained_models/TecoGAN_4x_BI_Vimeo_iter500K.pth
+    load_path: /root/vsr/pretrained_models/TecoGAN_4x_BI_Vimeo_iter500K.pth
 
+
+# metric configs
+metric:
+  PSNR:
+    colorspace: y
+
+  LPIPS:
+    model: net-lin
+    net: alex
+    colorspace: rgb
+    spatial: false
+    version: 0.1
+
+  tOF:
+    colorspace: y
 
 # test configs
 test:
   # whether to save the SR results
   save_res: true
   res_dir: results
-
   # temporal padding
   padding_mode: reflect
   num_pad_front: 5

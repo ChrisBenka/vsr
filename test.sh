@@ -6,7 +6,7 @@
 root_dir=.
 degradation=$1
 model=$2
-gpu_ids=2,3
+gpu_ids=0
 master_port=4322
 
 
