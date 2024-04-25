@@ -18,7 +18,7 @@ class PairedLMDBDataset(BaseDataset):
 
         # load meta info
         gt_meta = pickle.load(
-            open(osp.join(self.gt_seq_dir, 'meta_info.pkl'), 'rb'))
+            open(osp.join(self.gt_seq_dir, 'w.pkl'), 'rb'))
         lr_meta = pickle.load(
             open(osp.join(self.lr_seq_dir, 'meta_info.pkl'), 'rb'))
         gt_keys = sorted(gt_meta['keys'])

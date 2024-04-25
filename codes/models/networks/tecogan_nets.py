@@ -161,6 +161,7 @@ class FRNet(BaseSequenceGenerator):
 
         # define fnet & srnet
         self.fnet = FNet(in_nc)
+
         self.srnet = SRNet(in_nc, out_nc, nf, nb, self.upsample_func, self.scale)
 
     def forward(self, lr_data, device=None):
@@ -185,8 +186,14 @@ class FRNet(BaseSequenceGenerator):
         lr_curr = lr_data[:, 1:, ...].reshape(n * (t - 1), c, lr_h, lr_w)
         lr_flow = self.fnet(lr_curr, lr_prev)  # n*(t-1),2,h,w
 
+
+        # pad if size is not a multiple of 8
+        pad_h = lr_curr.size(2) - lr_curr.size(2) // 8 * 8
+        pad_w = lr_curr.size(3) - lr_curr.size(3) // 8 * 8
+        lr_flow_pad = F.pad(lr_flow, (0, pad_w, 0, pad_h), 'reflect')
+
         # upsample lr flows
-        hr_flow = self.scale * self.upsample_func(lr_flow)
+        hr_flow = self.scale * self.upsample_func(lr_flow_pad)
         hr_flow = hr_flow.view(n, (t - 1), 2, hr_h, hr_w)
 
         # compute the first hr data
@@ -215,11 +222,11 @@ class FRNet(BaseSequenceGenerator):
 
         # construct output dict
         ret_dict = {
-            'hr_data': hr_data,  # n,t,c,hr_h,hr_w
-            'hr_flow': hr_flow,  # n,t,2,hr_h,hr_w
-            'lr_prev': lr_prev,  # n(t-1),c,lr_h,lr_w
-            'lr_curr': lr_curr,  # n(t-1),c,lr_h,lr_w
-            'lr_flow': lr_flow,  # n(t-1),2,lr_h,lr_w
+            'hr_data': hr_data.cpu(),  # n,t,c,hr_h,hr_w
+            'hr_flow': hr_flow.cpu(),  # n,t,2,hr_h,hr_w
+            'lr_prev': lr_prev.cpu(),  # n(t-1),c,lr_h,lr_w
+            'lr_curr': lr_curr.cpu(),  # n(t-1),c,lr_h,lr_w
+            'lr_flow': lr_flow.cpu(),  # n(t-1),2,lr_h,lr_w
         }
 
         return ret_dict
@@ -424,7 +431,7 @@ class SpatioTemporalDiscriminator(BaseSequenceDiscriminator):
                 hr_flow_idle = torch.zeros_like(hr_flow_bw)  # frame1 -> frame1
                 hr_flow_fw = hr_flow_fw.view(n, t // 3, 2, hr_h, hr_w)  # frame1 -> frame2
 
-            # merge bw/idle/fw flows
+            #. merge bw/idle/fw flows
             hr_flow_merge = torch.stack(
                 [hr_flow_bw, hr_flow_idle, hr_flow_fw], dim=2)  # n,t//3,3,2,h,w
 
@@ -450,7 +457,7 @@ class SpatioTemporalDiscriminator(BaseSequenceDiscriminator):
 
         # part 3: warped data
         warp_data = backward_warp(
-            data[:, :t, ...].reshape(n * t, c, hr_h, hr_w), hr_flow_merge)
+            data[:, :t, ...].reshape(n * t, c, hr_h, hr_w), hr_flow_merge.cuda())
         warp_data = warp_data.view(n_clip, 3, c, hr_h, hr_w)
         warp_data = warp_data.permute(0, 2, 1, 3, 4)
         warp_data = warp_data.reshape(n_clip, c * 3, hr_h, hr_w)
@@ -458,7 +465,12 @@ class SpatioTemporalDiscriminator(BaseSequenceDiscriminator):
         warp_data = F.pad(
             warp_data[..., n_pad: n_pad + c_size, n_pad: n_pad + c_size],
             (n_pad,) * 4, mode='constant')
-
+        orig_data = F.pad(
+            orig_data[..., n_pad: n_pad + c_size, n_pad: n_pad + c_size],
+            (n_pad,) * 4, mode='constant')
+        cond_data = F.pad(
+            cond_data[..., n_pad: n_pad + c_size, n_pad: n_pad + c_size],
+            (n_pad,) * 4, mode='constant')
         # combine 3 parts together
         input_data = torch.cat([orig_data, warp_data, cond_data], dim=1)
 

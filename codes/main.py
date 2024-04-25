@@ -2,7 +2,7 @@ import os
 import os.path as osp
 import math
 import time
-
+import glob
 import torch
 
 from data import create_dataloader
@@ -10,10 +10,13 @@ from models import define_model
 from metrics import create_metric_calculator
 from utils import dist_utils, base_utils, data_utils
 
+from basicsr.data.data_util import read_img_seq
+import datetime
+
 
 def train(opt):
     # print configurations
-    base_utils.log_info(f'{20*"-"} Configurations {20*"-"}')
+    base_utils.log_info(f'{20 * "-"} Configurations {20 * "-"}')
     base_utils.print_options(opt)
 
     # create data loader
@@ -129,6 +132,65 @@ def train(opt):
                             metric_calculator.display()
 
 
+def edge_enhance_train(opt):
+    base_utils.log_info(f'{20 * "-"} Configurations {20 * "-"}')
+    base_utils.print_options(opt)
+
+    # loading dataset
+    lr_train_folder = opt['dataset']['train']['lr_seq_dir']
+    gt_train_folder = opt['dataset']['train']['gt_seq_dir']
+
+    subfolder_lr_train = sorted(glob.glob(osp.join(lr_train_folder, '*')))
+    subfolder_gt_train = sorted(glob.glob(osp.join(gt_train_folder, '*')))
+
+    total_iter = opt['train']['total_iter']
+    start_iter = 0
+    test_freq = opt['test']['test_freq']
+    log_freq = opt['logger']['log_freq']
+    ckpt_freq = opt['logger']['ckpt_freq']
+    ckpt_freq = opt['logger']['ckpt_freq']
+
+    # build model
+    model = define_model(opt)
+
+    # batch size
+    bz = 1
+    t_each_side = 2
+
+    for epoch in range(100):
+        for (subfolder, subfolder_gt) in zip(subfolder_lr_train, subfolder_gt_train):
+            imgs_lq = read_img_seq(subfolder, return_imgname=False)
+            imgs_gt = read_img_seq(subfolder_gt, return_imgname=False)
+
+            for i in range(t_each_side, imgs_lq.shape[0], 1):
+                # update iter
+                curr_iter = start_iter + 1
+
+                input = imgs_lq[i-t_each_side:i+t_each_side, :, :, :].unsqueeze(0).permute(0,1,3,4,2).cuda()
+                target = imgs_gt[i-t_each_side:i+t_each_side, :, :, :].unsqueeze(0).permute(0,1,3,4,2).cuda()
+
+                # prepare data
+                model.prepare_training_data({"gt": target.cuda(), "lr": input.cuda()})
+
+                # train a mini-batch
+                model.train()
+
+                # update running log
+                model.update_running_log()
+
+                # update learning rate
+                model.update_learning_rate()
+
+                # print messages
+                if log_freq > 0 and curr_iter % log_freq == 0:
+                    msg = model.get_format_msg(epoch, curr_iter)
+                    base_utils.log_info(msg)
+
+                # save model
+                if ckpt_freq > 0 and curr_iter % ckpt_freq == 0:
+                    model.save(curr_iter)
+
+
 def test(opt):
     # logging
     base_utils.print_options(opt)
@@ -220,8 +282,8 @@ def profile(opt, lr_size, test_speed=False):
     base_utils.print_options(opt['model']['generator'])
 
     lr_size_lst = tuple(map(int, lr_size.split('x')))
-    hr_size = f'{lr_size_lst[0]}x{lr_size_lst[1]*scale}x{lr_size_lst[2]*scale}'
-    msg += f'{"*"*40}\nResolution: {lr_size} -> {hr_size} ({scale}x SR)'
+    hr_size = f'{lr_size_lst[0]}x{lr_size_lst[1] * scale}x{lr_size_lst[2] * scale}'
+    msg += f'{"*" * 40}\nResolution: {lr_size} -> {hr_size} ({scale}x SR)'
 
     # create model
     from models.networks import define_generator
@@ -235,14 +297,14 @@ def profile(opt, lr_size, test_speed=False):
     gflops_all, params_all = 0, 0
     for module_name in gflops_dict.keys():
         gflops, params = gflops_dict[module_name], params_dict[module_name]
-        msg += f'\n{"-"*40}\nModule: [{module_name}]'
+        msg += f'\n{"-" * 40}\nModule: [{module_name}]'
         msg += f'\n    FLOPs (10^9): {gflops:.3f}'
-        msg += f'\n    Parameters (10^6): {params/1e6:.3f}'
+        msg += f'\n    Parameters (10^6): {params / 1e6:.3f}'
         gflops_all += gflops
         params_all += params
-    msg += f'\n{"-"*40}\nOverall'
+    msg += f'\n{"-" * 40}\nOverall'
     msg += f'\n    FLOPs (10^9): {gflops_all:.3f}'
-    msg += f'\n    Parameters (10^6): {params_all/1e6:.3f}\n{"*"*40}'
+    msg += f'\n    Parameters (10^6): {params_all / 1e6:.3f}\n{"*" * 40}'
 
     # test running speed
     if test_speed:
@@ -259,7 +321,7 @@ def profile(opt, lr_size, test_speed=False):
             # ---
             end_time = time.time()
             tot_time += end_time - start_time
-        msg += f'\nSpeed: {n_test/tot_time:.3f} FPS (averaged over {n_test} runs)\n{"*"*40}'
+        msg += f'\nSpeed: {n_test / tot_time:.3f} FPS (averaged over {n_test} runs)\n{"*" * 40}'
 
     base_utils.log_info(msg)
 
@@ -279,6 +341,13 @@ if __name__ == '__main__':
     # === train === #
     if args.mode == 'train':
         train(opt)
+    # === edge enhance train  === #
+    elif args.mode == 'edge_enhance_train':
+        edge_enhance_train(opt)
+
+    # # === edge enhance train  === #
+    # elif args.mode == 'edge_enhance_test':
+    #     my_train(opt)
 
     # === test === #
     elif args.mode == 'test':

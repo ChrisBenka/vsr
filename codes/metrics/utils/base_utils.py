@@ -37,7 +37,7 @@ def parse_configs(args):
 
     opt['exp_dir'] = args.exp_dir
     opt['gpu_ids'] = args.gpu_ids
-    opt['is_train'] = ("train" in args.mode)
+    opt['is_train'] = (args.mode.contains('train'))
 
     # setup device
     setup_device(opt, args.gpu_ids, args.local_rank)

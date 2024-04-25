@@ -52,6 +52,9 @@ class BaseModel():
             self.gt_data = data['gt'].to(self.device)
             self.lr_data = data['lr'].to(self.device)
 
+            self.gt_data = self.gt_data.permute(0,1,-1,-3,-2)
+            self.lr_data = self.lr_data.permute(0,1,-1,-3,-2)
+
         elif degradation_type == 'BD':
             # generate lr data on the fly (on gpu)
 
@@ -87,7 +90,7 @@ class BaseModel():
     def prepare_inference_data(self, data):
         """ Prepare lr data for training (w/o loading on device)
         """
-
+        print(data['lr'].shape)
         degradation_type = self.opt['dataset']['degradation']['type']
 
         if degradation_type == 'BI':
@@ -127,8 +130,9 @@ class BaseModel():
     def infer(self):
         pass
 
-    def model_to_device(self, net):
-        net = net.to(self.device)
+    def model_to_device(self, net,device="cpu"):
+        device = torch.device(device)
+        net = net.to(device)
         if self.dist:
             net = nn.SyncBatchNorm.convert_sync_batchnorm(net)
             net = DistributedDataParallel(
@@ -221,9 +225,21 @@ class BaseModel():
         # TODO
         pass
 
+    def remove_unused_keys(self,state_dict, model):
+        model_keys = set(model.state_dict().keys())
+        state_dict_keys = set(state_dict.keys())
+
+        keys_to_remove = state_dict_keys - model_keys
+
+        for key in keys_to_remove:
+            del state_dict[key]
+
+        return state_dict
+
     def load_network(self, net, load_path):
         state_dict = torch.load(
             load_path, map_location=lambda storage, loc: storage)
+        state_dict = self.remove_unused_keys(state_dict,net)
         net = self.get_bare_model(net)
         net.load_state_dict(state_dict)
 

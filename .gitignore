@@ -1,0 +1,11 @@
+gcp
+gcp.pub
+/mnt/disks/data/TecoGAN/codes/results
+/mnt/disks/data/TecoGAN/data/ToS3/
+/mnt/disks/data/TecoGAN/data/Vid4/
+/mnt/disks/data/TecoGAN/data/UDM10/
+pretrained_models/*
+results/
+data/ToS3/
+data/UDM10/
+*.pyc
