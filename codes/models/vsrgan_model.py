@@ -10,23 +10,21 @@ from .networks.vgg_nets import VGGFeatureExtractor
 from .optim import define_criterion, define_lr_schedule
 from utils import base_utils, net_utils, dist_utils
 
-from .edge_enhancer import EdgeEnhancement
-
 
 class VSRGANModel(VSRModel):
-    """
-     A model wrapper for subjective video super-resolution
+    """ A model wrapper for subjective video super-resolution
     """
 
     def __init__(self, opt):
         super(VSRGANModel, self).__init__(opt)
+
         if self.is_train:
             self.cnt_upd_D = 0
 
     def set_networks(self):
         # define generator
         self.net_G = define_generator(self.opt)
-        self.net_G = self.model_to_device(self.net_G, device="cuda:0")
+        self.net_G = self.model_to_device(self.net_G)
         base_utils.log_info('Generator: {}\n{}'.format(
             self.opt['model']['generator']['name'], self.net_G.__str__()))
 
@@ -35,20 +33,6 @@ class VSRGANModel(VSRModel):
         if load_path_G:
             self.load_network(self.net_G, load_path_G)
             base_utils.log_info('Load generator from: {}'.format(load_path_G))
-
-        if "edge" in self.opt:
-            self.enhance_edge = self.opt['edge']['enhance']
-        else:
-            self.enhance_edge = False
-
-        if self.enhance_edge:
-            # construct edge enhancer
-            self.edge_enhancer = EdgeEnhancement(edge_enhancement_type=self.opt['edge']['type'])
-            # self.edge_enhancer = self.model_to_device(self.edge_enhancer)
-            load_path_edge_enhancer = self.opt['edge'].get('load_path', '')
-            if load_path_edge_enhancer:
-                self.load_network(self.edge_enhancer, load_path_edge_enhancer)
-                base_utils.log_info('Load edge enhancer from: {}'.format(load_path_G))
 
         if self.is_train:
             # define discriminator
@@ -69,8 +53,6 @@ class VSRGANModel(VSRModel):
 
         # warping criterion
         self.warp_crit = define_criterion(self.opt['train'].get('warping_crit'))
-        if self.edge_enhancer:
-            self.warp_crit = None
 
         # feature criterion
         self.feat_crit = define_criterion(
@@ -91,20 +73,11 @@ class VSRGANModel(VSRModel):
 
     def set_optimizers(self):
         # set optimizer for net_G
-        if not self.enhance_edge:
-            self.optim_G = optim.Adam(
-                self.net_G.parameters(),
-                lr=self.opt['train']['generator']['lr'],
-                weight_decay=self.opt['train']['generator'].get('weight_decay', 0),
-                betas=self.opt['train']['generator'].get('betas', (0.9, 0.999)))
-        else:
-            self.optim_G = optim.Adam(
-                [{'params': self.net_G.parameters()},
-                 {'params': self.edge_enhancer.parameters()}
-                 ],
-                lr=self.opt['train']['generator']['lr'],
-                weight_decay=self.opt['train']['generator'].get('weight_decay', 0),
-                betas=self.opt['train']['generator'].get('betas', (0.9, 0.999)))
+        self.optim_G = optim.Adam(
+            self.net_G.parameters(),
+            lr=self.opt['train']['generator']['lr'],
+            weight_decay=self.opt['train']['generator'].get('weight_decay', 0),
+            betas=self.opt['train']['generator'].get('betas', (0.9, 0.999)))
 
         # set optimizer for net_D
         self.optim_D = optim.Adam(
@@ -148,34 +121,14 @@ class VSRGANModel(VSRModel):
         # === initialize === #
         self.net_G.train()
         self.net_D.train()
-        # if self.edge_enhancer:
-        #     self.edge_enhancer.train()
         self.optim_G.zero_grad()
         self.optim_D.zero_grad()
         self.log_dict = OrderedDict()
 
         # === forward net_G === #
-        self.net_G = self.model_to_device(self.net_G, device="cuda:0")
         net_G_output_dict = self.net_G(lr_data)
-        # self.net_G  = self.model_to_device(self.net_G,device="cpu")
-
-        ### move to CPU ###
-        # lr_rev = lr_data.flip(1)[:, 1:, ...]
-        # gt_rev = gt_data.flip(1)[:, 1:, ...].cpu()
-        # bi_rev = bi_data.flip(1)[:, 1:, ...].cpu()
-        #
-        # lr_data = torch.cat([lr_data.cpu(), lr_rev.cpu()], dim=1).cpu()
-        # gt_data = torch.cat([gt_data.cpu(), gt_rev.cpu()], dim=1).cpu()
-        # bi_data = torch.cat([bi_data.cpu(), bi_rev.cpu()], dim=1).cpu()
-
         hr_data = net_G_output_dict['hr_data']
 
-        hr_data_base = hr_data.clone()
-
-        if self.edge_enhancer:
-            self.edge_enhancer = self.model_to_device(self.edge_enhancer, device="cuda:0")
-            hr_data, extracted_frames = self.edge_enhancer(hr_data.squeeze(0).cuda())
-            hr_data = hr_data.unsqueeze(0)
         # === forward net_D === #
         for param in self.net_D.parameters():
             param.requires_grad = True
@@ -192,15 +145,13 @@ class VSRGANModel(VSRModel):
         net_D_input_dict.update(net_G_output_dict)
 
         # forward real sequence (gt)
-        self.net_D = self.model_to_device(self.net_D, "cuda:0")
         real_pred, net_D_oputput_dict = self.net_D(gt_data, net_D_input_dict)
-        # self.net_D = self.model_to_device(self.net_D,"cpu")
 
         # reuse internal data (e.g., optical flow)
         net_D_input_dict.update(net_D_oputput_dict)
 
         # forward fake sequence (hr)
-        fake_pred, _ = self.net_D(hr_data.cuda().detach(), net_D_input_dict)
+        fake_pred, _ = self.net_D(hr_data.detach(), net_D_input_dict)
 
         # === optimize net_D === #
         real_pred_D, fake_pred_D = real_pred[0], fake_pred[0]
@@ -256,7 +207,7 @@ class VSRGANModel(VSRModel):
         # pixel (pix) loss
         if self.pix_crit is not None:
             pix_w = self.opt['train']['pixel_crit'].get('weight', 1)
-            loss_pix_G = pix_w * self.pix_crit(hr_data.cuda(), gt_data)
+            loss_pix_G = pix_w * self.pix_crit(hr_data, gt_data)
             loss_G += loss_pix_G
             self.log_dict['l_pix_G'] = loss_pix_G.item()
 
@@ -277,8 +228,8 @@ class VSRGANModel(VSRModel):
             hr_merge = hr_data.view(-1, c, gt_h, gt_w)
             gt_merge = gt_data.view(-1, c, gt_h, gt_w)
 
-            hr_feat_lst = self.net_F(hr_merge.cuda())
-            gt_feat_lst = self.net_F(gt_merge.cuda())
+            hr_feat_lst = self.net_F(hr_merge)
+            gt_feat_lst = self.net_F(gt_merge)
 
             loss_feat_G = 0
             for hr_feat, gt_feat in zip(hr_feat_lst, gt_feat_lst):
@@ -292,22 +243,13 @@ class VSRGANModel(VSRModel):
         # ping-pong (pp) loss
         if self.pp_crit is not None:
             tempo_extent = self.opt['train']['tempo_extent']
-            hr_data_fw = hr_data[:, :tempo_extent - 1, ...]  # -------->|
+            hr_data_fw = hr_data[:, :tempo_extent - 1, ...]      # -------->|
             hr_data_bw = hr_data[:, tempo_extent:, ...].flip(1)  # <--------|
 
             pp_w = self.opt['train']['pingpong_crit'].get('weight', 1)
             loss_pp_G = pp_w * self.pp_crit(hr_data_fw, hr_data_bw)
             loss_G += loss_pp_G
             self.log_dict['l_pp_G'] = loss_pp_G.item()
-
-        # edge enhanced content (pp) loss
-        if self.edge_enhancer:
-            mse_loss_base = torch.nn.MSELoss()
-            mse_loss_final = torch.nn.MSELoss()
-            ee_content_loss = mse_loss_base(hr_data_base.cuda(), gt_data.cuda()) + 10 * mse_loss_final(hr_data.cuda(),
-                                                                                                       gt_data.cuda())
-            self.log_dict['ee_content_loss'] = ee_content_loss.item()
-            loss_G += ee_content_loss
 
         # feature matching (fm) loss
         if self.fm_crit is not None:
@@ -330,7 +272,7 @@ class VSRGANModel(VSRModel):
 
         # gan loss
         if self.fm_crit is None:
-            fake_pred, _ = self.net_D(hr_data.cuda(), net_D_input_dict)
+            fake_pred, _ = self.net_D(hr_data, net_D_input_dict)
         fake_pred_G = fake_pred[0]
 
         gan_w = self.opt['train']['gan_crit'].get('weight', 1)

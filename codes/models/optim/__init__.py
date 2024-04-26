@@ -1,6 +1,9 @@
+import math
+
 import torch.nn as nn
 import torch.optim as optim
-
+import torch
+import math
 
 def define_criterion(criterion_opt):
     if criterion_opt is None:
@@ -29,6 +32,9 @@ def define_criterion(criterion_opt):
         from .losses import LSGANLoss
         criterion = LSGANLoss(reduction=criterion_opt['reduction'])
 
+    elif criterion_opt['type'] == "EE":
+        from .losses import EdgeEnhancedCriterion
+        criterion = EdgeEnhancedCriterion(reduction=criterion_opt['reduction'])
     else:
         raise ValueError(f'Unrecognized criterion: {criterion_opt["type"]}')
 
@@ -68,3 +74,19 @@ def define_lr_schedule(schedule_opt, optimizer):
         raise ValueError(f'Unrecognized lr schedule: {schedule_opt["type"]}')
 
     return schedule
+
+
+class AlphaScheduler:
+    def __init__(self,initial,decay_rate,decay_step):
+        self.initial = initial
+        self.decay_rate = decay_rate
+        self.decay_step = decay_step
+        self.global_step = 0
+
+    def step(self):
+        self.global_step += 1
+        return self.initial * math.pow(self.decay_rate,(self.global_step/self.decay_step))
+
+
+
+

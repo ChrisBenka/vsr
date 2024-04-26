@@ -60,3 +60,13 @@ class CosineSimilarityLoss(nn.Module):
         loss = 1.0 - diff.mean()
 
         return loss
+
+
+class EdgeEnhancedCriterion(nn.Module):
+    def __init__(self,reduction='mse'):
+        super(EdgeEnhancedCriterion, self).__init__()
+        self.reduction = reduction
+
+    def forward(self, sr_base, sr_final, target, alpha):
+        return F.mse_loss(sr_base, target,reduction=self.reduction) + \
+            alpha * F.mse_loss(sr_final, target,reduction=self.reduction)

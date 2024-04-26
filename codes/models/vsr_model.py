@@ -19,6 +19,13 @@ class VSRModel(BaseModel):
         # define network
         self.set_networks()
 
+        # set edge enhance
+        if "edge" in self.opt:
+            self.enhance_edge = self.opt['edge']['enhance']
+        else:
+            self.enhance_edge = False
+
+
         # config training
         if self.is_train:
             self.set_criterions()
@@ -108,6 +115,8 @@ class VSRModel(BaseModel):
         # infer
         self.net_G.eval()
         hr_seq = self.net_G(lr_data, self.device)
+        if self.edge_enhancer:
+            hr_seq = self.edge_enhancer(hr_seq)
         hr_seq = hr_seq[n_pad_front:]
 
         return hr_seq

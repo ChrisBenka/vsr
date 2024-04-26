@@ -146,6 +146,9 @@ class BaseModel():
         if hasattr(self, 'sched_D') and self.sched_D is not None:
             self.sched_D.step()
 
+        if hasattr(self, 'sched_Alpha') and self.alpha is not None:
+            self.alpha = self.sched_Alpha.step()
+
     def get_learning_rate(self):
         lr_dict = OrderedDict()
 
@@ -154,6 +157,9 @@ class BaseModel():
 
         if hasattr(self, 'optim_D'):
             lr_dict['lr_D'] = self.optim_D.param_groups[0]['lr']
+
+        if hasattr(self, 'alpha'):
+            lr_dict['alpha_rate'] = self.alpha
 
         return lr_dict
 

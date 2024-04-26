@@ -45,8 +45,47 @@ def edge_extractor(frames,device,edge_extraction_type=EdgeExtraction.LAPLACIAN):
         return (torch.sqrt(sobel_x_edges ** 2 + sobel_y_edges ** 2) + laplacian).repeat(1, 3, 1, 1)
 
 
+class Patchify(nn.Module):
+    "src:https://mrinath.medium.com/vit-part-1-patchify-images-using-pytorch-unfold-716cd4fd4ef6"
+    def __init__(self, patch_size=56):
+        super().__init__()
+        self.p = patch_size
+        self.unfold = torch.nn.Unfold(kernel_size=patch_size, stride=patch_size)
+
+    def forward(self, x):
+        # x -> B c h w
+        bs, c, h, w = x.shape
+
+        x = self.unfold(x)
+        # x -> B (c*p*p) L
+
+        # Reshaping into the shape we want
+        a = x.view(bs, c, self.p, self.p, -1).permute(0, 4, 1, 2, 3)
+        # a -> ( B no.of patches c p p )
+        return a
+
+class UnPatchify(nn.Module):
+    "src:https://mrinath.medium.com/vit-part-1-patchify-images-using-pytorch-unfold-716cd4fd4ef6"
+    def __init__(self, patch_size, desired_shape=None):
+        super().__init__()
+        self.patch_size = patch_size
+        self.fold = torch.nn.Fold(output_size=desired_shape,
+                                  kernel_size=self.patch_size,
+                                  stride=self.patch_size)
+
+    def forward(self, x):
+        # x -> B no.of patches c p p
+        bs, num_patches, c, p, _ = x.shape
+
+        # Reshaping into the shape we want for folding
+        x = x.permute(0, 2, 3, 4, 1).contiguous().view(bs, c * p * p, num_patches)
+
+        # Folding to reconstruct the image
+        reconstructed_image = self.fold(x)
+        return reconstructed_image
+
 class Block(nn.Module):
-    def __init__(self):
+    def __init__(self,patch_size=32):
         super().__init__()
         self.leaky = nn.LeakyReLU(negative_slope=.2)
         self.dconv_1 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1)
@@ -58,16 +97,22 @@ class Block(nn.Module):
         self.dconv_6 = nn.ConvTranspose2d(in_channels=256, out_channels=64, kernel_size=1)
 
         self.conv_out = nn.ConvTranspose2d(in_channels=192, out_channels=64, kernel_size=3, padding=1)
+        self.patch_size = patch_size
+        self.patchify = Patchify(patch_size=self.patch_size)
 
     def forward(self, input):
-        x_1 = x_2 = x_3 = input.clone()
-        bz = x_1.shape[0]
-        img_h = x_1.shape[2]
-        img_w = x_1.shape[3]
+        input_patches = Patchify(patch_size=self.patch_size)(input)
+        input_patches_flat = input_patches.flatten(start_dim=0,end_dim=1)
+        # input_patches = input.flatten(start_dim=0,end_dim=1).unfold(0, 64, 64).unfold(1, 32, 32).unfold(2, 32, 32).flatten(start_dim=0,end_dim=2)
+        # input_patches = input_patches.fold(output_size=)
 
-        a1 = self.leaky(self.dconv_1(x_1, output_size=torch.Size([bz, 64, img_h, img_w])))
-        b1 = self.leaky(self.dconv_2(x_2, output_size=torch.Size([bz, 64, img_h, img_w])))
-        c1 = self.leaky(self.dconv_3(x_3, output_size=torch.Size([bz, 64, img_h, img_w])))
+
+        x_1 = x_2 = x_3 = input_patches_flat.clone()
+        bz = x_1.shape[0]
+
+        a1 = self.leaky(self.dconv_1(x_1, output_size=torch.Size([bz, 64, self.patch_size, self.patch_size])))
+        b1 = self.leaky(self.dconv_2(x_2, output_size=torch.Size([bz, 64, self.patch_size, self.patch_size])))
+        c1 = self.leaky(self.dconv_3(x_3, output_size=torch.Size([bz, 64, self.patch_size, self.patch_size])))
 
         sum = torch.concat([a1, b1, c1], dim=1)
 
@@ -75,7 +120,11 @@ class Block(nn.Module):
         x_2 = self.leaky(self.dconv_5(torch.concat([sum, b1], dim=1)))
         x_3 = self.leaky(self.dconv_6(torch.concat([sum, c1], dim=1)))
 
-        return self.leaky(self.conv_out(torch.concat([x_1, x_2, x_3], dim=1)))
+        out_patches =  self.leaky(self.conv_out(torch.concat([x_1, x_2, x_3], dim=1)))
+
+        return UnPatchify(patch_size=self.patch_size, desired_shape=input.size()[2:])(
+            out_patches.view(input_patches.shape)
+        )
 
 
 class Dense(nn.Module):
@@ -92,6 +141,28 @@ class Dense(nn.Module):
         return x
 
 
+# noise mask
+class Mask(nn.Module):
+    def __init__(self,patch_size=32):
+        super().__init__()
+        self.patch_size = patch_size
+        self.leaky = nn.LeakyReLU(negative_slope=.2)
+        self.dconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, padding=1)
+        self.dconv2 = nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.dconv3 = nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self,input):
+        input_patches = Patchify(patch_size=self.patch_size)(input)
+        input_patches_flat = input_patches.flatten(start_dim=0,end_dim=1)
+        bz = input_patches_flat.shape[0]
+        x = self.leaky(self.dconv1(input_patches_flat, output_size=torch.Size([bz, 64, self.patch_size, self.patch_size])))
+        x = self.leaky(self.dconv2(x, output_size=torch.Size([bz, 128, self.patch_size, self.patch_size])))
+        x = self.leaky(self.dconv3(x, output_size=torch.Size([bz, 256, self.patch_size, self.patch_size])))
+        x = self.sigmoid(x)
+        return UnPatchify(patch_size=self.patch_size, desired_shape=input.size()[2:])(
+            x.view(input_patches.shape[0],input_patches.shape[1],256,self.patch_size,self.patch_size)
+        )
 class Conv2dSamePadding(nn.Conv2d):
     def __init__(self, *args, **kwargs):
         super(Conv2dSamePadding, self).__init__(*args, **kwargs)
@@ -104,7 +175,7 @@ class Conv2dSamePadding(nn.Conv2d):
 
 
 class EdgeEnhancement(nn.Module):
-    def __init__(self, edge_enhancement_type=EdgeExtraction.LAPLACIAN):
+    def __init__(self, edge_enhancement_type=EdgeExtraction.LAPLACIAN,patch_size=32):
         super(EdgeEnhancement, self).__init__()
 
         if edge_enhancement_type == "LAPLACIAN":
@@ -114,7 +185,7 @@ class EdgeEnhancement(nn.Module):
         else:
             self.edge_enhancement_type == EdgeExtraction.BOTH
 
-
+        self.patch_size = patch_size
         self.leaky = nn.LeakyReLU(negative_slope=.2)
 
         self.encoder_1 = Conv2dSamePadding(in_channels=3, out_channels=64, kernel_size=3, stride=1)
@@ -132,14 +203,7 @@ class EdgeEnhancement(nn.Module):
 
         self.dense = Dense()
         # noise mask
-        self.mask = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            self.leaky,
-            nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
-            self.leaky,
-            nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, padding=1),
-            nn.Sigmoid()
-        )
+        self.mask = Mask(patch_size=self.patch_size)
 
         self.conv_tranpose_interm_2 = nn.Sequential(
             nn.ConvTranspose2d(in_channels=256, out_channels=64, kernel_size=3, padding=1),
@@ -196,10 +260,32 @@ class EdgeEnhancement(nn.Module):
 
         x_super_r = x_frame + frames - extracted_edges
         # super resolute images, edges
-        return x_super_r, frames - extracted_edges
+        return x_super_r
 
 
 if __name__ == '__main__':
-    edge_enhancer = EdgeEnhancement().cuda()
-    x_sr, edges = edge_enhancer(torch.randn(1, 3, 576, 720).cuda())
-    print(x_sr.shape)
+    # torch.cuda.empty_cache()
+    # edge_enhancer = EdgeEnhancement(patch_size=32,edge_enhancement_type= "LAPLACIAN").cuda()
+    # x = torch.rand(1, 3, 720, 1280).cuda()
+    # out = edge_enhancer(x)
+    # print(out[0].shape)
+
+    model =  EdgeEnhancement(patch_size=32,edge_enhancement_type= "LAPLACIAN")
+
+    # Check memory usage before moving to GPU
+    torch.cuda.empty_cache()  # Ensure GPU memory is freed
+    torch.cuda.synchronize()  # Synchronize CUDA kernel launches
+    mem_before = torch.cuda.memory_allocated()
+
+    # Move the model to GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    # Check memory usage after moving to GPU
+    torch.cuda.synchronize()  # Synchronize CUDA kernel launches
+    mem_after = torch.cuda.memory_allocated()
+
+    # Calculate memory usage difference
+    mem_used = mem_after - mem_before
+    print(mem_before)
+    print(f"Memory used by the model on GPU: {mem_used / (1024 ** 2)} MB")
