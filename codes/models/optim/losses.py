@@ -32,7 +32,7 @@ class CharbonnierLoss(nn.Module):
     """ Charbonnier Loss (robust L1)
     """
 
-    def __init__(self, eps=1e-6, reduction='sum'):
+    def __init__(self, eps=1e-6, reduction='mean'):
         super(CharbonnierLoss, self).__init__()
         self.eps = eps
         self.reduction = reduction
@@ -63,9 +63,9 @@ class CosineSimilarityLoss(nn.Module):
 
 
 class EdgeEnhancedCriterion(nn.Module):
-    def __init__(self,reduction='mse'):
+    def __init__(self,reduction='mean'):
         super(EdgeEnhancedCriterion, self).__init__()
-        self.reduction = reduction
+        self.reduction = 'mean'
 
     def forward(self, sr_base, sr_final, target, alpha):
         return F.mse_loss(sr_base, target,reduction=self.reduction) + \

@@ -127,7 +127,7 @@ class VSRGANModel(VSRModel):
 
         # === forward net_G === #
         net_G_output_dict = self.net_G(lr_data)
-        hr_data = net_G_output_dict['hr_data']
+        hr_data = net_G_output_dict['hr_data'].cuda()
 
         # === forward net_D === #
         for param in self.net_D.parameters():
@@ -212,16 +212,16 @@ class VSRGANModel(VSRModel):
             self.log_dict['l_pix_G'] = loss_pix_G.item()
 
         # warping (warp) loss
-        if self.warp_crit is not None:
-            lr_curr = net_G_output_dict['lr_curr']
-            lr_prev = net_G_output_dict['lr_prev']
-            lr_flow = net_G_output_dict['lr_flow']
-            lr_warp = net_utils.backward_warp(lr_prev, lr_flow)
-
-            warp_w = self.opt['train']['warping_crit'].get('weight', 1)
-            loss_warp_G = warp_w * self.warp_crit(lr_warp, lr_curr)
-            loss_G += loss_warp_G
-            self.log_dict['l_warp_G'] = loss_warp_G.item()
+        # if self.warp_crit is not None:
+        #     lr_curr = net_G_output_dict['lr_curr']
+        #     lr_prev = net_G_output_dict['lr_prev']
+        #     lr_flow = net_G_output_dict['lr_flow']
+        #     lr_warp = net_utils.backward_warp(lr_prev, lr_flow)
+        #
+        #     warp_w = self.opt['train']['warping_crit'].get('weight', 1)
+        #     loss_warp_G = warp_w * self.warp_crit(lr_warp, lr_curr)
+        #     loss_G += loss_warp_G
+        #     self.log_dict['l_warp_G'] = loss_warp_G.item()
 
         # feature/perceptual (feat) loss
         if self.feat_crit is not None:

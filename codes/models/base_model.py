@@ -10,7 +10,6 @@ from torch.nn.parallel import DistributedDataParallel
 from utils.data_utils import create_kernel, downsample_bd
 from utils.dist_utils import master_only
 
-
 class BaseModel():
     def __init__(self, opt):
         self.opt = opt
@@ -130,7 +129,7 @@ class BaseModel():
     def infer(self):
         pass
 
-    def model_to_device(self, net,device="cpu"):
+    def model_to_device(self, net,device="cuda:0"):
         device = torch.device(device)
         net = net.to(device)
         if self.dist:
@@ -152,14 +151,17 @@ class BaseModel():
     def get_learning_rate(self):
         lr_dict = OrderedDict()
 
-        if hasattr(self, 'optim_G'):
+        if hasattr(self, 'optim_G') and self.optim_G:
             lr_dict['lr_G'] = self.optim_G.param_groups[0]['lr']
 
-        if hasattr(self, 'optim_D'):
+        if hasattr(self, 'optim_D') and self.optim_D:
             lr_dict['lr_D'] = self.optim_D.param_groups[0]['lr']
 
-        if hasattr(self, 'alpha'):
+        if hasattr(self, 'alpha') and self.alpha:
             lr_dict['alpha_rate'] = self.alpha
+
+        if hasattr(self, 'optim_ee') and self.optim_ee:
+            lr_dict['optim_ee'] = self.optim_ee.param_groups[0]['lr']
 
         return lr_dict
 
