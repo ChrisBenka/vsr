@@ -1,0 +1,131 @@
+# basic configs
+scale: 4
+manual_seed: 0
+verbose: true
+
+
+# dataset configs
+dataset:
+  degradation:
+    type: BI
+
+  train:
+    name: tecogan
+    resize: [640,320]
+    gt_seq_dir: /root/vsr/data/REDS/train/train_sharp
+    lr_seq_dir: /root/vsr/results/REDS/TecoGAN_4x_BI_Vimeo_iter500K
+    filter_file: /root/vsr/data/meta/REDS/train_list.txt
+    data_type: rgblog
+    gt_crop_size: 128
+    batch_size_per_gpu: 2
+    num_worker_per_gpu: 3
+    pin_memory: true
+
+  test:
+    name: Vid4
+    gt_seq_dir: /root/vsr/data/Vid4/GT
+    lr_seq_dir: /root/vsr/data/Vid4/BIx4
+    filter_file: ~
+    num_worker_per_gpu: 4
+    pin_memory: true
+
+
+# model configs
+model:
+  name: vsree
+
+  generator:
+    name: FRNet  # frame-recurrent network
+    in_nc: 3
+    out_nc: 3
+    nf: 64
+    nb: 10
+    load_path: /root/vsr/pretrained_models/TecoGAN_4x_BI_Vimeo_iter500K.pth
+  edge_enhancer:
+    name: ee
+    type: BOTH
+#    load_path: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train1/ckpt/E_iter20000.pth
+# training configs
+train:
+  tempo_extent: 3
+  resize: [640,320]
+  gt_seq_dir: /root/vsr/data/REDS/train/train_sharp
+  lr_seq_dir: /root/vsr/results/REDS/TecoGAN_4x_BI_Vimeo_iter500K
+  start_iter: 0
+  total_iter: 500000
+
+  # configs for generator
+  generator:
+    lr: !!float 5e-8
+    lr_schedule:
+      type: FixedLR
+      betas: [0.9, 0.999]
+  edge_enhancer:
+    lr: !!float 5e-5
+    lr_schedule:
+      type: FixedLR
+      betas: [ 0.9, 0.999 ]
+
+
+  # other configs
+  moving_first_frame: true
+  moving_factor: 0.7
+
+  # criterions
+  edgeenhanced_crit:
+    type: EE
+    reduction: mean
+
+  pingpong_crit:
+    type: CB
+    weight: 0.5
+    reduction: mean
+
+  # criterions
+  pixel_crit:
+    type: CB
+    weight: 1
+    reduction: mean
+
+
+
+
+# validation configs
+test:
+  test_freq: 10000
+  # whether to save the generated SR results
+  save_res: true
+  res_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_BOTH/train # use default dir
+
+  # whether to save the test results in a json file
+  save_json: true
+  json_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_BOTH/train # use default dir
+
+
+
+# metric configs
+metric:
+  PSNR:
+    colorspace: y
+
+  LPIPS:
+    model: net-lin
+    net: alex
+    colorspace: rgb
+    spatial: false
+    version: 0.1
+
+  tOF:
+    colorspace: y
+
+
+# logger configs
+logger:
+  log_freq: 100
+  decay: 0.99
+  ckpt_freq: 20000
+
+edge:
+  enhance: true
+  type: BOTH
+

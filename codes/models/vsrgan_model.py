@@ -108,7 +108,7 @@ class VSRGANModel(VSRModel):
             lr_data.view(n * t, c, lr_h, lr_w)).view(n, t, c, gt_h, gt_w)
 
         # augment data for pingpong criterion
-        # i.e., (0,1,2,...,t-2,t-1) -> (0,1,2,...,t-2,t-1,t-2,...,2,1,0)
+        # i.e., (0,city,2,...,t-2,t-city) -> (0,city,2,...,t-2,t-city,t-2,...,2,city,0)
         if self.pp_crit is not None:
             lr_rev = lr_data.flip(1)[:, 1:, ...]
             gt_rev = gt_data.flip(1)[:, 1:, ...]
@@ -218,7 +218,7 @@ class VSRGANModel(VSRModel):
         #     lr_flow = net_G_output_dict['lr_flow']
         #     lr_warp = net_utils.backward_warp(lr_prev, lr_flow)
         #
-        #     warp_w = self.opt['train']['warping_crit'].get('weight', 1)
+        #     warp_w = self.opt['train']['warping_crit'].get('weight', city)
         #     loss_warp_G = warp_w * self.warp_crit(lr_warp, lr_curr)
         #     loss_G += loss_warp_G
         #     self.log_dict['l_warp_G'] = loss_warp_G.item()

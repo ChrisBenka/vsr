@@ -29,6 +29,7 @@ class VSREEModel(BaseModel):
         self.alpha = 10
 
         self.set_networks()
+        self.current_iter = 0
 
         # config training
         if self.is_train:
@@ -92,6 +93,9 @@ class VSREEModel(BaseModel):
     def train(self):
         # === get data === #
         lr_data, gt_data = self.lr_data, self.gt_data
+        self.current_iter += 1
+
+        # match_color = self.current_iter % 1000 == 0
 
         # === initialize === #
         self.edge_enhancer.train()
@@ -108,15 +112,14 @@ class VSREEModel(BaseModel):
         loss_pix_G_base = self.pix_crit(lr_data.squeeze(0).cuda().detach(), self.gt_data.squeeze(0).detach())
         loss_pix_E_base = self.pix_crit(hr_data.detach(), self.gt_data.squeeze(0).detach())
 
+        self.log_dict['l_pix_B'] = loss_pix_G_base.item()
+        self.log_dict['l_pix_ee'] = loss_pix_E_base.item()
         _,gt_edges_gray = self.edge_enhancer.edge_detector(self.gt_data.squeeze(0))
 
         loss_pix_edges = self.pix_crit(edges, gt_edges_gray)
 
+        loss_G = loss_pix_edges + loss_pix_E_base
 
-        loss_G = loss_pix_edges
-
-        self.log_dict['l_pix_B'] = loss_pix_G_base.item()
-        self.log_dict['l_pix_ee'] = loss_pix_E_base.item()
         self.log_dict['l_pix_edges'] = loss_pix_edges.item()
 
         # === other logging info ###
@@ -154,4 +157,4 @@ class VSREEModel(BaseModel):
 
     def save(self, current_iter):
         # self.save_network(self.net_G, 'G', current_iter)
-        self.save_network(self.edge_enhancer, "vsree", current_iter)
+        self.save_network(self.edge_enhancer, "vsree_3", current_iter)

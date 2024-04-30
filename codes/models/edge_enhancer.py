@@ -1,18 +1,21 @@
-import torch
-from torch import nn
-from enum import Enum
-import torch.nn.functional as F
-import numpy as np
-import functools, operator
-import unfoldNd
+import functools
+import operator
 import time
+from enum import Enum
+
 import cv2
+import numpy as np
+import torch
+from PIL import Image
+
+
+### SRC/INSPIRATION : https://github.com/kuijiang94/EEGAN/blob/master/src/EEGANx4.py
 
 def float32_to_uint8(inputs):
     """ Convert np.float32 array to np.uint8
 
         Parameters:
-            :param input: np.float32, (NT)CHW, [0, 1]
+            :param input: np.float32, (NT)CHW, [0, city]
             :return: np.uint8, (NT)CHW, [0, 255]
     """
     return np.uint8(np.clip(np.round(inputs * 255), 0, 255))
@@ -23,25 +26,30 @@ class EdgeExtraction(Enum):
     SOBEL = 2
     BOTH = 3
 
+
 from torch import nn
 import torch.nn.functional as F
-class EdgeDetector(torch.nn.Module):
-#https://github.com/zhaoyuzhi/PyTorch-Sobel/blob/main/pytorch-sobel.py
 
-    def __init__(self,type="LAPLACIAN"):
+
+class EdgeDetector(torch.nn.Module):
+    # https://github.com/zhaoyuzhi/PyTorch-Sobel/blob/main/pytorch-sobel.py
+
+    def __init__(self, type="LAPLACIAN"):
         super(EdgeDetector, self).__init__()
+        print(f"using {type}")
+        laplacian_kernel_detail = [
+            [-1, -1, -1],
+            [-1, 8, -1],
+            [-1, -1, -1]
+
+        ]
         kernel_v = [[0, -1, 0],
                     [0, 0, 0],
                     [0, 1, 0]]
         kernel_h = [[0, 0, 0],
                     [-1, 0, 1],
                     [0, 0, 0]]
-        laplacian_kernel_detail = [
-    [-1, -1, -1],
-    [-1, 8, -1],
-    [-1, -1, -1]
 
-                                 ]
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
         laplacian_kernel_detail = torch.FloatTensor(laplacian_kernel_detail).unsqueeze(0).unsqueeze(0)
@@ -50,11 +58,13 @@ class EdgeDetector(torch.nn.Module):
         self.weight_v = nn.Parameter(data=kernel_v, requires_grad=False)
         self.laplac = nn.Parameter(data=laplacian_kernel_detail, requires_grad=False)
         self.type = type
-    def normalize(self,x):
+
+    def normalize(self, x):
         x_min = torch.min(x)
         x_max = torch.max(x)
         return torch.div(x - x_min, x_max - x_min)
-    def get_gray(self,x):
+
+    def get_gray(self, x):
         '''
         Convert image to its gray one.
         '''
@@ -69,16 +79,17 @@ class EdgeDetector(torch.nn.Module):
         if self.type == "BOTH":
             x_v = F.conv2d(x, self.weight_v, padding=1)
             x_h = F.conv2d(x, self.weight_h, padding=1)
-            x = torch.sqrt(torch.pow(x_v, 2) + torch.pow(x_h, 2) + 1e-6)
-            x = x + F.conv2d(x,self.laplac,padding=1)
+            sobel = torch.sqrt(torch.pow(x_v, 2) + torch.pow(x_h, 2))
+            x = F.conv2d(sobel, self.laplac, padding=1)
         elif self.type == "LAPLACIAN":
-            x = F.conv2d(x,self.laplac,padding=1)
+            x = F.conv2d(x, self.laplac, padding=1)
         else:
             x_v = F.conv2d(x, self.weight_v, padding=1)
             x_h = F.conv2d(x, self.weight_h, padding=1)
             x = torch.sqrt(torch.pow(x_v, 2) + torch.pow(x_h, 2) + 1e-6)
         x_norm = self.normalize(x)
-        return x_norm.repeat(1,3,1,1),x_norm
+        return x_norm.repeat(1, 3, 1, 1), x_norm
+
 
 class SubBlock(nn.Module):
     def __init__(self):
@@ -139,7 +150,7 @@ class Dense(nn.Module):
         x = x_frames.clone()
         for i in range(len(self.blocks)):
             x_1 = x_2 = x_3 = x.clone()
-            x += self.blocks[i](x_1,x_2,x_3)
+            x += self.blocks[i](x_1, x_2, x_3)
         return x
 
 
@@ -167,6 +178,7 @@ class Mask(nn.Module):
 
 
 class Conv2dSamePadding(nn.Conv2d):
+    """NOT MY CODE"""
     def __init__(self, *args, **kwargs):
         super(Conv2dSamePadding, self).__init__(*args, **kwargs)
         self.zero_pad_2d = nn.ZeroPad2d(functools.reduce(operator.__add__,
@@ -223,11 +235,11 @@ class EdgeEnhancement(nn.Module):
 
     def encoder(self, frames):
         x = self.leaky(self.encoder_1(frames))
-        # (1,64,520,720)
+        # (city,64,520,720)
         x = self.leaky(self.encoder_2(x))
-        # (1,64,520,720)
+        # (city,64,520,720)
         x = self.leaky(self.encoder_3(x))
-        # (1,128,259,359)
+        # (city,128,259,359)
         x = self.leaky(self.encoder_4(x))
         x = self.leaky(self.encoder_5(x))
         x = self.leaky(self.encoder_6(x))
@@ -269,9 +281,37 @@ class EdgeEnhancement(nn.Module):
         return np.stack(hr_seq).transpose(0, 2, 3, 1), \
             np.stack(edge_seq).transpose(0, 2, 3, 1)  # thwc
 
+    ### --- NEEDED ASSISTANCE TO MATCH COLOR / LUMINENANCE IN IMAGE I GENERATED TO WHAT WAS EXPECTED
+    """NOT MY CODE """
+    def rgb_to_ycbcr(self, image):
+        r, g, b = image[:, 0, :, :], image[:, 1, :, :], image[:, 2, :, :]
+        y = 0.299 * r + 0.587 * g + 0.114 * b
+        cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b
+        cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b
+        return torch.stack([y, cb, cr], dim=1)
+
+    """NOT MY CODE """
+    def ycbcr_to_rgb(self, image):
+        y, cb, cr = image[:, 0, :, :], image[:, 1, :, :], image[:, 2, :, :]
+        r = y + 1.402 * (cr - 128.0)
+        g = y - 0.344136 * (cb - 128.0) - 0.714136 * (cr - 128.0)
+        b = y + 1.772 * (cb - 128.0)
+        return torch.clamp(torch.stack([r, g, b], dim=1), 0.0, 255.0)
+
+    """NOT MY CODE """
+    def match_color_new(self, source_img, target_img):
+        source_ycbcr = self.rgb_to_ycbcr(source_img)
+        target_ycbcr = self.rgb_to_ycbcr(target_img)
+        source_y, source_cb, source_cr = torch.unbind(source_ycbcr, dim=1)
+        target_y, target_cb, target_cr = torch.unbind(target_ycbcr, dim=1)
+        adjusted_ycc = torch.stack([target_y, source_cb, source_cr], dim=1)
+        adjusted_rgb = self.ycbcr_to_rgb(adjusted_ycc)
+        adjusted_rgb = (adjusted_rgb - adjusted_rgb.min()) / (adjusted_rgb.max() - adjusted_rgb.min())
+        return adjusted_rgb
+
     def forward_sequence(self, frames):
         # extract edges using LAPLACIAN/SOBEL/BOTH
-        extracted_edges_repeat,edges_gray = self.edge_detector(frames)
+        extracted_edges_repeat, edges_gray = self.edge_detector(frames)
         # feature learning
         residual_x = self.encoder(extracted_edges_repeat)
         # DENSE BLOCK + CON
@@ -288,43 +328,35 @@ class EdgeEnhancement(nn.Module):
         x_frame = self.upscale_2(x_frame)
         enhanced_edges = self.conv_final(x_frame)
 
-        enhaced_edges = self.edge_detector.normalize(enhanced_edges)
-        enhaced_edges = enhaced_edges - edges_gray
-        x_super_r = self.edge_detector.normalize(enhaced_edges.repeat(1,3,1,1) + frames)
-        # super resolute images, edges
-        return x_super_r, enhaced_edges
+        enhanced_edges = self.edge_detector.normalize(enhanced_edges)
+        enhanced_edges = enhanced_edges - edges_gray
+        x_super_r = self.edge_detector.normalize(enhanced_edges.repeat(1, 3, 1, 1) + frames)
+        x_super_r = self.match_color_new(x_super_r, frames)
+        return x_super_r, enhanced_edges
 
 
+"""
+FUNCTIONS USEFUL FOR DEBUGGING / VIEWING OUTPUTS WHILE TRAINING
+I DID NOT WRITE THESE....
+"""
 def display_frame(frame):
-    # Reshape the array to (96, 96)
-    image_array = np.squeeze(frame.clone().detach().cpu().numpy())  # Remove the singleton dimension
-    image_array = np.transpose(image_array, (1, 2, 0))  # Transpose to (96, 96, 1)
-
-    # Convert to uint8 (assuming values are in the range 0-1)
+    image_array = np.squeeze(frame.clone().detach().cpu().numpy())
+    image_array = np.transpose(image_array, (1, 2, 0))
     image_array = (image_array * 255).astype(np.uint8)
+    cv2.imwrite('/vsr/sr_mine.jpg', cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR))
 
-    # Save the array as a grayscale image using OpenCV# Save the array as an RGB image using OpenCV
-    cv2.imwrite('/root/vsr/rgb_image_ee.jpg', cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR))
-    print("Image saved successfully.")
 
 def display_edges(edges):
-    # Reshape the array to (96, 96)
-    # ee_module = EdgeDetector()
-    # edges = ee_module(frame)
-    image_array = edges.clone().detach().cpu().numpy() # Remove the singleton dimension
-    image_array = np.transpose(image_array, (1, 2, 0))  # Transpose to (96, 96, 1)
-
-    # Convert to uint8 (assuming values are in the range 0-1)
+    image_array = edges.clone().detach().cpu().numpy()
+    image_array = np.transpose(image_array, (1, 2, 0))
     image_array = (image_array * 255).astype(np.uint8)
+    cv2.imwrite('/vsr/my_edges_laplacian.jpg', image_array)
 
-    # Save the array as a grayscale image using OpenCV# Save the array as an RGB image using OpenCV
-    cv2.imwrite('/root/vsr/grayscale_image.jpg',image_array)
-    print("Image saved successfully.")
 
 if __name__ == '__main__':
     # torch.cuda.empty_cache()
     # edge_enhancer = EdgeEnhancement(patch_size=32,edge_enhancement_type= "LAPLACIAN").cuda()
-    # x = torch.rand(1, 3, 720, 1280).cuda()
+    # x = torch.rand(city, 3, 720, 1280).cuda()
     # out = edge_enhancer(x)
     # print(out[0].shape)
     # opt = {}
@@ -334,9 +366,8 @@ if __name__ == '__main__':
     # opt["is_train"] = "false"
     model = EdgeEnhancement()
 
-
     # Move the model to GPU
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:city" if torch.cuda.is_available() else "cpu")
     model.to(device)
     opt = torch.optim.Adam(model.parameters())
 

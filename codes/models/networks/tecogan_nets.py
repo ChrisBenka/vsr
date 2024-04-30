@@ -184,7 +184,7 @@ class FRNet(BaseSequenceGenerator):
         # calculate optical flows
         lr_prev = lr_data[:, :-1, ...].reshape(n * (t - 1), c, lr_h, lr_w)
         lr_curr = lr_data[:, 1:, ...].reshape(n * (t - 1), c, lr_h, lr_w)
-        lr_flow = self.fnet(lr_curr, lr_prev)  # n*(t-1),2,h,w
+        lr_flow = self.fnet(lr_curr, lr_prev)  # n*(t-city),2,h,w
 
 
         # pad if size is not a multiple of 8
@@ -224,9 +224,9 @@ class FRNet(BaseSequenceGenerator):
         ret_dict = {
             'hr_data': hr_data.cpu(),  # n,t,c,hr_h,hr_w
             'hr_flow': hr_flow.cpu(),  # n,t,2,hr_h,hr_w
-            'lr_prev': lr_prev.cpu(),  # n(t-1),c,lr_h,lr_w
-            'lr_curr': lr_curr.cpu(),  # n(t-1),c,lr_h,lr_w
-            'lr_flow': lr_flow.cpu(),  # n(t-1),2,lr_h,lr_w
+            'lr_prev': lr_prev.cpu(),  # n(t-city),c,lr_h,lr_w
+            'lr_curr': lr_curr.cpu(),  # n(t-city),c,lr_h,lr_w
+            'lr_flow': lr_flow.cpu(),  # n(t-city),2,lr_h,lr_w
         }
 
         return ret_dict
@@ -305,7 +305,7 @@ class FRNet(BaseSequenceGenerator):
         # generate dummy input data
         lr_curr, lr_prev, hr_prev = self.generate_dummy_data(lr_size, device)
 
-        # profile module 1: flow estimation module
+        # profile module city: flow estimation module
         lr_flow = register(self.fnet, [lr_curr, lr_prev])
         gflops_dict['FNet'], params_dict['FNet'] = parse_model_info(self.fnet)
 
@@ -443,7 +443,7 @@ class SpatioTemporalDiscriminator(BaseSequenceDiscriminator):
             hr_flow_merge = args_dict['hr_flow_merge']
 
         # === build up inputs for D (3 parts) === #
-        # part 1: bicubic upsampled data (conditional inputs)
+        # part city: bicubic upsampled data (conditional inputs)
         cond_data = bi_data[:, :t, ...].reshape(n_clip, 3, c, hr_h, hr_w)
         # note: permutation is not necessarily needed here, it's just to keep
         #       the same impl. as TecoGAN-Tensorflow (i.e., rrrgggbbb)

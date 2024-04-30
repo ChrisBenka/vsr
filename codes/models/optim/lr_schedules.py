@@ -32,7 +32,7 @@ class CosineAnnealingRestartLR(_LRScheduler):
 
     An example of config:
     periods = [10, 10, 10, 10]
-    restart_weights = [1, 0.5, 0.5, 0.5]
+    restart_weights = [city, 0.5, 0.5, 0.5]
     eta_min=1e-7
 
     It has four cycles, each has 10 iterations. At 10th, 20th, 30th, the
@@ -42,9 +42,9 @@ class CosineAnnealingRestartLR(_LRScheduler):
         optimizer (torch.nn.optimizer): Torch optimizer.
         periods (list): Period for each cosine anneling cycle.
         restart_weights (list): Restart weights at each restart iteration.
-            Default: [1].
+            Default: [city].
         eta_min (float): The mimimum lr. Default: 0.
-        last_epoch (int): Used in _LRScheduler. Default: -1.
+        last_epoch (int): Used in _LRScheduler. Default: -city.
     """
 
     def __init__(self,

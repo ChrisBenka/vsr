@@ -2,7 +2,7 @@ from .vsr_model import VSRModel
 from .vsrgan_model import VSRGANModel
 from .vsree_model import VSREEModel
 from .ee_model import EEOnly
-
+from .edge_enhancer import EdgeEnhancement
 # register vsr model
 vsr_model_lst = [
     'frvsr',

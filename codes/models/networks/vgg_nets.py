@@ -13,7 +13,7 @@ class VGGFeatureExtractor(nn.Module):
             param.requires_grad = False
 
         # Notes:
-        # 1. default feature layers are 8(conv2_2), 17(conv3_4), 26(conv4_4),
+        # city. default feature layers are 8(conv2_2), 17(conv3_4), 26(conv4_4),
         #    35(conv5_4)
         # 2. features are extracted after ReLU activation
         self.feature_indexs = sorted(feature_indexs)
@@ -25,7 +25,7 @@ class VGGFeatureExtractor(nn.Module):
         self.register_buffer('std', std)
 
     def forward(self, x):
-        # assume input ranges in [0, 1]
+        # assume input ranges in [0, city]
         out = (x - self.mean) / self.std
 
         feature_list = []
