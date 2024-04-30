@@ -177,17 +177,6 @@ class Mask(nn.Module):
         return x
 
 
-class Conv2dSamePadding(nn.Conv2d):
-    """NOT MY CODE"""
-    def __init__(self, *args, **kwargs):
-        super(Conv2dSamePadding, self).__init__(*args, **kwargs)
-        self.zero_pad_2d = nn.ZeroPad2d(functools.reduce(operator.__add__,
-                                                         [(k // 2 + (k - 2 * (k // 2)) - 1, k // 2) for k in
-                                                          self.kernel_size[::-1]]))
-
-    def forward(self, input):
-        return self._conv_forward(self.zero_pad_2d(input), self.weight, self.bias)
-
 
 class EdgeEnhancement(nn.Module):
     def __init__(self, edge_enhancement_type="LAPLACIAN"):
@@ -196,12 +185,12 @@ class EdgeEnhancement(nn.Module):
 
         self.leaky = nn.LeakyReLU(negative_slope=.2)
 
-        self.encoder_1 = Conv2dSamePadding(in_channels=3, out_channels=64, kernel_size=3, stride=1)
-        self.encoder_2 = Conv2dSamePadding(in_channels=64, out_channels=64, kernel_size=3, stride=1)
-        self.encoder_3 = Conv2dSamePadding(in_channels=64, out_channels=128, kernel_size=3, stride=2)
-        self.encoder_4 = Conv2dSamePadding(in_channels=128, out_channels=128, kernel_size=3, stride=1)
-        self.encoder_5 = Conv2dSamePadding(in_channels=128, out_channels=256, kernel_size=3, stride=2)
-        self.encoder_6 = Conv2dSamePadding(in_channels=256, out_channels=64, kernel_size=3, stride=1)
+        self.encoder_1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1)
+        self.encoder_2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
+        self.encoder_3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2,padding=1)
+        self.encoder_4 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1)
+        self.encoder_5 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2,padding=1)
+        self.encoder_6 = nn.Conv2d(in_channels=256, out_channels=64, kernel_size=3, stride=1)
 
         # intermediate conv layer.
         self.conv_tranpose_interm = nn.Sequential(
