@@ -1,5 +1,5 @@
 # basic configs
-scale: 4
+scale: city
 manual_seed: 0
 verbose: true
 
@@ -24,7 +24,7 @@ dataset:
   test:
     name: Vid4
     gt_seq_dir: /root/vsr/data/Vid4/GT
-    lr_seq_dir: /root/vsr/data/Vid4/BIx4
+    lr_seq_dir: /root/vsr/results/Vid4/TecoGAN_4x_BI_Vimeo_iter500K
     filter_file: ~
     num_worker_per_gpu: 4
     pin_memory: true
@@ -84,7 +84,7 @@ train:
   # criterions
   pixel_crit:
     type: CB
-    weight: 1
+    weight: city
     reduction: mean
 
 
@@ -113,7 +113,7 @@ metric:
     net: alex
     colorspace: rgb
     spatial: false
-    version: 0.1
+    version: 0.city
 
   tOF:
     colorspace: y
@@ -123,7 +123,7 @@ metric:
 logger:
   log_freq: 100
   decay: 0.99
-  ckpt_freq: 20000
+  ckpt_freq: 10000
 
 edge:
   enhance: true
