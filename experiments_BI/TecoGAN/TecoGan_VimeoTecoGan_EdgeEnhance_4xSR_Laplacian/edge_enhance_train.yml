@@ -10,10 +10,11 @@ dataset:
     type: BI
 
   train:
-    name: VimeoTecoGAN
-    gt_seq_dir: /root/vsr/data/UDM10/GT
-    lr_seq_dir: /root/vsr/data/UDM10/BIx4
-    filter_file: ~
+    name: tecogan
+    resize: [640,320]
+    gt_seq_dir: /root/vsr/data/REDS/train/train_sharp
+    lr_seq_dir: /root/vsr/results/REDS/TecoGAN_4x_BI_Vimeo_iter500K
+    filter_file: /root/vsr/data/meta/REDS/train_list.txt
     data_type: rgblog
     gt_crop_size: 128
     batch_size_per_gpu: 2
@@ -31,7 +32,7 @@ dataset:
 
 # model configs
 model:
-  name: TecoGAN
+  name: vsree
 
   generator:
     name: FRNet  # frame-recurrent network
@@ -40,88 +41,66 @@ model:
     nf: 64
     nb: 10
     load_path: /root/vsr/pretrained_models/TecoGAN_4x_BI_Vimeo_iter500K.pth
-
-  discriminator:
-    name: STNet  # spatio-temporal network
-    in_nc: 3
-    tempo_range: 3
-    load_path: ~
-
-
+  edge_enhancer:
+    name: ee
+    type: LAPLACIAN
+#    load_path: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train1/ckpt/E_iter20000.pth
 # training configs
 train:
-  ckpt_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/
-  tempo_extent: 4
-
+  tempo_extent: 3
+  resize: [640,320]
+  gt_seq_dir: /root/vsr/data/REDS/train/train_sharp
+  lr_seq_dir: /root/vsr/results/REDS/TecoGAN_4x_BI_Vimeo_iter500K
   start_iter: 0
   total_iter: 500000
 
   # configs for generator
   generator:
-    lr: !!float 5e-5
+    lr: !!float 5e-8
     lr_schedule:
-      type: StepLR
-      gamma: .9
-      step_size: 10000
-    betas: [0.9, 0.999]
-
-  # configs for discriminator
-  discriminator:
-    update_policy: adaptive
-    update_threshold: 0.4
-    crop_border_ratio: 0.75
+      type: FixedLR
+      betas: [0.9, 0.999]
+  edge_enhancer:
     lr: !!float 5e-5
     lr_schedule:
       type: FixedLR
-    betas: [0.9, 0.999]
+      betas: [ 0.9, 0.999 ]
+
 
   # other configs
   moving_first_frame: true
-  moving_factor: 0.7t
+  moving_factor: 0.7
 
   # criterions
-  pixel_crit:
-    type: CB
-    weight: 1
+  edgeenhanced_crit:
+    type: EE
     reduction: mean
-
-  warping_crit:
-    type: CB
-    weight: 1
-    reduction: mean
-
-  feature_crit:
-    type: CosineSimilarity
-    weight: 0.2
-    reduction: mean
-    feature_layers: [8, 17, 26, 35]
 
   pingpong_crit:
     type: CB
     weight: 0.5
     reduction: mean
 
-  gan_crit:
-    type: GAN
-    weight: 0.01
+  # criterions
+  pixel_crit:
+    type: CB
+    weight: city
     reduction: mean
+
+
 
 
 # validation configs
 test:
-  # each UDM10  video has 32 frames, so we test at end of
-  test_freq: 160
-
+  test_freq: 10000
   # whether to save the generated SR results
   save_res: true
-  res_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/ # use default dir
+  res_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train # use default dir
 
   # whether to save the test results in a json file
   save_json: true
-  json_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train/  # use default dir
+  json_dir: /root/vsr/experiments_BI/TecoGAN/TecoGan_VimeoTecoGan_EdgeEnhance_4xSR_Laplacian/train # use default dir
 
-  padding_mode: reflect
-  num_pad_front: 5
 
 
 # metric configs
@@ -134,17 +113,17 @@ metric:
     net: alex
     colorspace: rgb
     spatial: false
-    version: 0.1
+    version: 0.city
 
   tOF:
     colorspace: y
 
 
-# logger config
+# logger configs
 logger:
-  log_freq: 40
+  log_freq: 100
   decay: 0.99
-  ckpt_freq: 320
+  ckpt_freq: 10000
 
 edge:
   enhance: true
