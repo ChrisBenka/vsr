@@ -8,11 +8,11 @@ import torch
 from .base_dataset import BaseDataset
 from utils.base_utils import retrieve_files
 
-from torchvision import transforms, utils
 
 class PairedFolderDataset(BaseDataset):
     """ Folder dataset for paired data. It supports both BI & BD degradation.
     """
+
     def __init__(self, data_opt, **kwargs):
         super(PairedFolderDataset, self).__init__(data_opt, **kwargs)
 
@@ -20,7 +20,7 @@ class PairedFolderDataset(BaseDataset):
         gt_keys = sorted(os.listdir(self.gt_seq_dir))
         lr_keys = sorted(os.listdir(self.lr_seq_dir))
         self.keys = sorted(list(set(gt_keys) & set(lr_keys)))
-
+        
         # filter keys
         sel_keys = set(self.keys)
         if hasattr(self, 'filter_file') and self.filter_file is not None:
@@ -40,11 +40,8 @@ class PairedFolderDataset(BaseDataset):
         gt_seq = []
         for frm_path in retrieve_files(osp.join(self.gt_seq_dir, key)):
             frm = cv2.imread(frm_path)[..., ::-1]
-            if hasattr(self, 'resize'):
-                frm = cv2.resize(frm, (self.resize))
-            frm = cv2.normalize(frm, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX,
-                                             dtype=cv2.CV_32F)
-            frm = np.clip(frm,0,1)
+            if hasattr(self,'resize'):
+                frm = cv2.resize(frm, np.array(self.resize)*4)
             gt_seq.append(frm)
         gt_seq = np.stack(gt_seq)  # thwc|rgb|uint8
 
@@ -52,12 +49,9 @@ class PairedFolderDataset(BaseDataset):
         lr_seq = []
         for frm_path in retrieve_files(osp.join(self.lr_seq_dir, key)):
             frm = cv2.imread(frm_path)[..., ::-1].astype(np.float32)
-            if hasattr(self, 'resize'):
-                frm = cv2.resize(frm, (self.resize))
-            frm = cv2.normalize(frm, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX,
-                                             dtype=cv2.CV_32F)
-            frm = np.clip(frm,0,1)
-            lr_seq.append(frm)
+            if hasattr(self,'resize'):
+                frm = cv2.resize(frm, self.resize)
+            lr_seq.append(frm / 255.0)
         lr_seq = np.stack(lr_seq)  # thwc|rgb|float32
 
         # convert to tensor
