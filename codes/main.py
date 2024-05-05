@@ -31,7 +31,7 @@ def train(opt):
     total_sample, iter_per_epoch = len(train_loader.dataset), len(train_loader)
     total_iter = opt['train']['total_iter']
     total_epoch = int(math.ceil(total_iter / iter_per_epoch))
-    start_iter, iter = opt['train']['start_iter'], 0
+    start_iter, iter = opt['train']['start_iter'],0
     test_freq = opt['test']['test_freq']
     log_freq = opt['logger']['log_freq']
     ckpt_freq = opt['logger']['ckpt_freq']
@@ -60,6 +60,14 @@ def train(opt):
                     "frm_idx": data["frm_idx"][i:i+bz]
                 }, epoch, log_freq, model, opt, test_freq)
 
+def float32_to_uint8(inputs):
+    """ Convert np.float32 array to np.uint8
+
+        Parameters:
+            :param input: np.float32, (NT)CHW, [0, city]
+            :return: np.uint8, (NT)CHW, [0, 255]
+    """
+    return np.uint8(np.clip(np.round(inputs * 255), 0, 255))
 
 def run_train_iter(ckpt_freq, curr_iter, data, epoch, log_freq, model, opt, test_freq):
     # prepare data
@@ -123,7 +131,7 @@ def run_train_iter(ckpt_freq, curr_iter, data, epoch, log_freq, model, opt, test
                 if metric_calculator is not None:
                     gt_seq = data['gt'].numpy()
                     metric_calculator.compute_sequence_metrics(
-                        data['seq_idx'], gt_seq, hr_seq)
+                        data['seq_idx'], float32_to_uint8(gt_seq), hr_seq)
 
             # save/print results
             if metric_calculator is not None:
@@ -302,7 +310,7 @@ def test(opt):
     # infer and evaluate performance for each model
     for load_path in opt['model']['generator']['load_path_lst']:
         # set model index
-        model_idx = osp.splitext(osp.split(load_path)[-1])[0]
+        model_idx = osp.splitext(osp.split(loadC_path)[-1])[0]
 
         # log
         base_utils.log_info(f'{"=" * 40}')
